@@ -911,6 +911,17 @@ function buildBarChart(m,t){
   const mx=Math.max(...cols.map(c=>c.cnt),1),total=cols.reduce((a,c)=>a+c.cnt,0);
   const avg=(total/cols.length).toFixed(1);
   const div=document.createElement('div');div.className='chart-box';
+  // D: show single-day summary instead of lonely bar
+  if(currentPeriod==='D'){
+    const streak=calcStreak(m);
+    div.innerHTML=`<div class="chart-title"><span>${esc(m.name)}</span><span style="color:var(--text3)">freq</span></div>
+      <div style="display:flex;align-items:baseline;gap:16px;margin-top:6px">
+        <div><div style="font-family:'IBM Plex Mono',monospace;font-size:28px;font-weight:500;color:var(--t-accent)">${total}</div><div style="font-family:'IBM Plex Mono',monospace;font-size:10px;color:var(--text3);margin-top:2px">today</div></div>
+        <div><div style="font-family:'IBM Plex Mono',monospace;font-size:28px;font-weight:500">${streak}</div><div style="font-family:'IBM Plex Mono',monospace;font-size:10px;color:var(--text3);margin-top:2px">day streak</div></div>
+        <div style="margin-left:auto;text-align:right"><div style="font-family:'IBM Plex Mono',monospace;font-size:14px;font-weight:500">+${total*m.reward}</div><div style="font-family:'IBM Plex Mono',monospace;font-size:10px;color:var(--text3);margin-top:2px">${t.unit} today</div></div>
+      </div>`;
+    return div;
+  }
   div.innerHTML=`<div class="chart-title"><span>${esc(m.name)}</span><span style="color:var(--text3)">${total} total · avg ${avg}/${bucketUnit()}</span></div>
     <div class="bars">${cols.map(c=>`<div class="bar-col">
       <div class="bar-fill ${c.cnt>0?(c.isToday?'today-bar':'has'):''}" style="height:${c.cnt?Math.max(4,(c.cnt/mx)*100):4}%"></div>
@@ -925,11 +936,22 @@ function buildHeatmapChart(m,t){
     cells.push({date:ds,done:S.log.some(l=>l.missionId===m.id&&l.date===ds)});
   }
   const success=cells.filter(c=>c.done).length,pct=Math.round(success/cells.length*100);
+  const div=document.createElement('div');div.className='chart-box';
+  // D: show single-day summary
+  if(currentPeriod==='D'){
+    const done=cells[0]&&cells[0].done;
+    const streak=calcStreak(m);
+    div.innerHTML=`<div class="chart-title"><span>${esc(m.name)}</span><span style="color:var(--text3)">daily</span></div>
+      <div style="display:flex;align-items:baseline;gap:16px;margin-top:6px">
+        <div><div style="font-family:'IBM Plex Mono',monospace;font-size:28px;font-weight:500;color:${done?'var(--c-daily)':'var(--text3)'}">${done?'✓':'—'}</div><div style="font-family:'IBM Plex Mono',monospace;font-size:10px;color:var(--text3);margin-top:2px">today</div></div>
+        <div><div style="font-family:'IBM Plex Mono',monospace;font-size:28px;font-weight:500">${streak}</div><div style="font-family:'IBM Plex Mono',monospace;font-size:10px;color:var(--text3);margin-top:2px">day streak</div></div>
+      </div>`;
+    return div;
+  }
   // fixed cell size — never stretch to fill width
   const cellSize=14,gap=2;
   const cols=heatmapColumns();
   const gridW=(cellSize+gap)*cols-gap;
-  const div=document.createElement('div');div.className='chart-box';
   div.innerHTML=`<div class="chart-title"><span>${esc(m.name)}</span><span style="color:var(--text3)">${success}/${cells.length} days · ${pct}%</span></div>
     <div style="display:grid;grid-template-columns:repeat(${cols},${cellSize}px);gap:${gap}px;margin-top:10px;width:${gridW}px">${cells.map(c=>`<div style="width:${cellSize}px;height:${cellSize}px;border-radius:2px;background:${c.done?t.accent:'var(--bg3)'}"></div>`).join('')}</div>`;
   return div;
