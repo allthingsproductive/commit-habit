@@ -85,11 +85,25 @@ body { font-family:'IBM Plex Sans Thai',sans-serif; background:var(--bg); color:
 .add-slot { border:1px dashed var(--border); border-radius:6px; padding:11px 16px; color:var(--text3); font-size:13px; cursor:pointer; display:flex; align-items:center; gap:8px; transition:border-color .15s,color .15s; margin-bottom:8px; user-select:none; }
 .add-slot:hover { border-color:var(--border2); color:var(--text2); }
 .log-list { list-style:none; }
-.log-item { display:flex; align-items:flex-start; gap:10px; padding:8px 0; border-bottom:1px solid var(--border); font-size:13px; }
-.log-time { font-family:'IBM Plex Mono',monospace; font-size:10px; color:var(--text3); flex-shrink:0; padding-top:3px; width:40px; }
-.ldot { width:6px; height:6px; border-radius:50%; flex-shrink:0; margin-top:7px; }
+.log-group { border:1px solid var(--border); border-radius:6px; margin-bottom:8px; overflow:hidden; background:var(--bg); }
+.log-group-header { display:flex; align-items:center; gap:8px; padding:10px 14px; cursor:pointer; user-select:none; transition:background .1s; }
+.log-group-header:hover { background:var(--bg2); }
+.log-group-name { font-size:13px; font-weight:500; flex:1; }
+.log-group-meta { font-family:'IBM Plex Mono',monospace; font-size:10px; color:var(--text3); }
+.log-group-arrow { font-family:'IBM Plex Mono',monospace; font-size:10px; color:var(--text3); transition:transform .2s; }
+.log-group-arrow.open { transform:rotate(90deg); }
+.log-group-body { display:none; border-top:1px solid var(--border); }
+.log-group-body.open { display:block; }
+.log-item { display:flex; align-items:flex-start; gap:10px; padding:8px 14px; border-bottom:1px solid var(--border); font-size:13px; transition:opacity .2s,transform .2s; }
+.log-item:last-child { border-bottom:none; }
+.log-item.removing { opacity:0; transform:translateX(10px); }
+.log-time { font-family:'IBM Plex Mono',monospace; font-size:10px; color:var(--text3); flex-shrink:0; padding-top:2px; width:38px; }
+.ldot { width:6px; height:6px; border-radius:50%; flex-shrink:0; margin-top:6px; }
 .ldot.freq { background:var(--c-freq); } .ldot.daily { background:var(--c-daily); }
 .log-detail { font-size:12px; color:var(--text2); display:block; }
+.log-del { margin-left:auto; flex-shrink:0; background:none; border:none; cursor:pointer; color:var(--text3); font-size:13px; line-height:1; padding:2px 0 2px 8px; opacity:0; transition:opacity .15s,color .15s; font-family:'IBM Plex Mono',monospace; }
+.log-item:hover .log-del { opacity:1; }
+.log-del:hover { color:#dc2626; }
 .stat-grid { display:grid; grid-template-columns:repeat(3,1fr); gap:8px; margin-bottom:8px; }
 .stat-box { border:1px solid var(--border); border-radius:6px; padding:10px 12px; }
 .stat-num { font-family:'IBM Plex Mono',monospace; font-size:20px; font-weight:500; line-height:1.2; }
@@ -216,6 +230,8 @@ body { font-family:'IBM Plex Sans Thai',sans-serif; background:var(--bg); color:
   </div>
   <div class="stat-grid" id="stat-grid"></div>
   <div id="stats-charts"></div>
+  <div class="slabel" style="margin-top:28px">all entries</div>
+  <div id="stats-log-list"></div>
 </div>
 </div>
 
@@ -638,13 +654,67 @@ function buildDailyBtn(m,done){
   return`<button class="cibtn" id="cibtn-${m.id}" onclick="submitDaily('${m.id}')"><span class="cibtn-icon">○</span> mark complete</button>`;
 }
 
+function deleteLog(logIndex, liEl){
+  liEl.classList.add('removing');
+  setTimeout(()=>{
+    const entry=S.log[logIndex];
+    if(entry){
+      const m=S.missions.find(x=>x.id===entry.missionId);
+      if(m) S.points=Math.max(0,S.points-(m.reward||0));
+      if(entry.type==='daily'&&S.dailyDone[entry.missionId]===entry.date) delete S.dailyDone[entry.missionId];
+      S.log.splice(logIndex,1);
+      saveState();
+    }
+    updateTopbar();renderHome();
+  },200);
+}
+
+function toggleLogGroup(id){
+  const body=document.getElementById('lgb-'+id);
+  const arrow=document.getElementById('lga-'+id);
+  if(!body)return;
+  body.classList.toggle('open');
+  arrow.classList.toggle('open');
+}
+
 function renderLog(){
   const list=document.getElementById('log-list');list.innerHTML='';
-  const todayLogs=S.log.filter(l=>l.date===today()).slice().reverse().slice(0,25);
-  if(!todayLogs.length){list.innerHTML='<li style="padding:12px 0;color:var(--text3);font-size:13px;font-family:\'IBM Plex Mono\',monospace">no entries yet today</li>';return;}
-  todayLogs.forEach(l=>{const li=document.createElement('li');li.className='log-item';
-    li.innerHTML=`<span class="log-time">${l.time}</span><span class="ldot ${l.type}"></span><span><strong>${esc(l.name)}</strong>${l.detail?`<span class="log-detail">${esc(l.detail)}</span>`:''}</span>`;
-    list.appendChild(li);});
+  const todayStr=today();
+  const indexed=S.log.map((l,i)=>({l,i})).filter(({l})=>l.date===todayStr);
+  if(!indexed.length){
+    list.innerHTML='<div style="padding:12px 0;color:var(--text3);font-size:13px;font-family:\'IBM Plex Mono\',monospace">no entries yet today</div>';
+    return;
+  }
+  const groups={};
+  indexed.forEach(({l,i})=>{
+    if(!groups[l.missionId]) groups[l.missionId]={name:l.name,type:l.type,entries:[],lastTime:l.time};
+    groups[l.missionId].entries.push({l,i});
+    if(l.time>groups[l.missionId].lastTime) groups[l.missionId].lastTime=l.time;
+  });
+  const sorted=Object.entries(groups).sort((a,b)=>b[1].lastTime.localeCompare(a[1].lastTime));
+  sorted.forEach(([mid,g])=>{
+    const entriesSorted=g.entries.slice().sort((a,b)=>b.l.time.localeCompare(a.l.time));
+    const cnt=entriesSorted.length;
+    const isDaily=g.type==='daily';
+    const div=document.createElement('div');div.className='log-group';
+    div.innerHTML=
+      '<div class="log-group-header" onclick="toggleLogGroup(\''+mid+'\')">'+
+        '<span class="ldot '+g.type+'" style="margin-top:0;flex-shrink:0"></span>'+
+        '<span class="log-group-name">'+esc(g.name)+'</span>'+
+        '<span class="log-group-meta">'+(isDaily?'daily':'×'+cnt)+'</span>'+
+        '<span class="log-group-arrow open" id="lga-'+mid+'">▶</span>'+
+      '</div>'+
+      '<div class="log-group-body open" id="lgb-'+mid+'">'+
+        entriesSorted.map(({l,i})=>
+          '<div class="log-item" id="li-'+i+'" style="transition:opacity .2s,transform .2s">'+
+            '<span class="log-time">'+l.time+'</span>'+
+            '<span style="flex:1;min-width:0">'+(l.detail?'<span class="log-detail">'+esc(l.detail)+'</span>':'<span style="color:var(--text3);font-size:12px;font-family:\'IBM Plex Mono\',monospace">—</span>')+'</span>'+
+            '<button class="log-del" onclick="deleteLog('+i+',document.getElementById(\'li-'+i+'\'))">✕</button>'+
+          '</div>'
+        ).join('')+
+      '</div>';
+    list.appendChild(div);
+  });
 }
 
 // ── CHECK-IN ────────────────────────────────────
@@ -790,6 +860,50 @@ function renderStats(){
   const active=S.missions.filter(m=>!m.archived);
   if(!active.length){charts.innerHTML='<div style="color:var(--text3);font-size:13px;font-family:\'IBM Plex Mono\',monospace;padding:20px 0">no active missions</div>';return;}
   active.forEach(m=>{charts.appendChild(m.type==='freq'?buildBarChart(m,t):buildHeatmapChart(m,t));});
+  renderStatsLog(periodLogs);
+}
+
+function renderStatsLog(periodLogs){
+  const container=document.getElementById('stats-log-list');
+  if(!container)return;
+  container.innerHTML='';
+  if(!periodLogs.length){
+    container.innerHTML='<div style="color:var(--text3);font-size:13px;font-family:\'IBM Plex Mono\',monospace;padding:8px 0">no entries in this period</div>';
+    return;
+  }
+  // group by missionId, build indexed map first
+  const indexed=S.log.map((l,i)=>({l,i}));
+  const groups={};
+  periodLogs.forEach(l=>{
+    if(!groups[l.missionId]) groups[l.missionId]={name:l.name,type:l.type,entries:[]};
+    // find original index
+    const found=indexed.find(x=>x.l===l);
+    if(found) groups[l.missionId].entries.push({l,i:found.i});
+  });
+  const sorted=Object.entries(groups).sort((a,b)=>a[1].name.localeCompare(b[1].name,'th'));
+  sorted.forEach(([mid,g])=>{
+    const entriesSorted=g.entries.slice().sort((a,b)=>b.l.date.localeCompare(a.l.date)||b.l.time.localeCompare(a.l.time));
+    const cnt=entriesSorted.length;
+    const isDaily=g.type==='daily';
+    const div=document.createElement('div');div.className='log-group';
+    div.style.marginBottom='8px';
+    div.innerHTML=
+      '<div class="log-group-header" onclick="toggleLogGroup(\'sl-'+mid+'\')">'+
+        '<span class="ldot '+g.type+'" style="margin-top:0;flex-shrink:0"></span>'+
+        '<span class="log-group-name">'+esc(g.name)+'</span>'+
+        '<span class="log-group-meta">'+(isDaily?cnt+' days':'×'+cnt)+'</span>'+
+        '<span class="log-group-arrow" id="lga-sl-'+mid+'">▶</span>'+
+      '</div>'+
+      '<div class="log-group-body" id="lgb-sl-'+mid+'">'+
+        entriesSorted.map(({l,i})=>
+          '<div class="log-item">'+
+            '<span class="log-time" style="width:70px;font-size:9px">'+l.date.slice(5)+'&nbsp;'+l.time+'</span>'+
+            '<span style="flex:1;min-width:0">'+(l.detail?'<span class="log-detail">'+esc(l.detail)+'</span>':'<span style="color:var(--text3);font-size:12px;font-family:\'IBM Plex Mono\',monospace">—</span>')+'</span>'+
+          '</div>'
+        ).join('')+
+      '</div>';
+    container.appendChild(div);
+  });
 }
 
 function buildBarChart(m,t){
