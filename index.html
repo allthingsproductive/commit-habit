@@ -922,12 +922,16 @@ function buildHeatmapChart(m,t){
   const days=periodDays(),now=new Date(),cells=[];
   for(let i=days-1;i>=0;i--){
     const ds=dateKey(addDays(now,-i));
-    cells.push(S.log.some(l=>l.missionId===m.id&&l.date===ds));
+    cells.push({date:ds,done:S.log.some(l=>l.missionId===m.id&&l.date===ds)});
   }
-  const success=cells.filter(Boolean).length,pct=Math.round(success/cells.length*100);
+  const success=cells.filter(c=>c.done).length,pct=Math.round(success/cells.length*100);
+  // fixed cell size — never stretch to fill width
+  const cellSize=14,gap=2;
+  const cols=heatmapColumns();
+  const gridW=(cellSize+gap)*cols-gap;
   const div=document.createElement('div');div.className='chart-box';
   div.innerHTML=`<div class="chart-title"><span>${esc(m.name)}</span><span style="color:var(--text3)">${success}/${cells.length} days · ${pct}%</span></div>
-    <div class="heatmap-grid" style="grid-template-columns:repeat(${heatmapColumns()},1fr)">${cells.map(done=>`<div class="hm-cell" style="background:${done?t.accent:'var(--bg3)'}"></div>`).join('')}</div>`;
+    <div style="display:grid;grid-template-columns:repeat(${cols},${cellSize}px);gap:${gap}px;margin-top:10px;width:${gridW}px">${cells.map(c=>`<div style="width:${cellSize}px;height:${cellSize}px;border-radius:2px;background:${c.done?t.accent:'var(--bg3)'}"></div>`).join('')}</div>`;
   return div;
 }
 
