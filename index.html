@@ -104,6 +104,9 @@ body { font-family:'IBM Plex Sans Thai',sans-serif; background:var(--bg); color:
 .log-del { margin-left:auto; flex-shrink:0; background:none; border:none; cursor:pointer; color:var(--text3); font-size:13px; line-height:1; padding:2px 0 2px 8px; opacity:0; transition:opacity .15s,color .15s; font-family:'IBM Plex Mono',monospace; }
 .log-item:hover .log-del { opacity:1; }
 .log-del:hover { color:#dc2626; }
+.log-edit { flex-shrink:0; background:none; border:none; cursor:pointer; color:var(--text3); font-size:10px; line-height:1; padding:2px 4px; opacity:0; transition:opacity .15s,color .15s; font-family:'IBM Plex Mono',monospace; }
+.log-item:hover .log-edit { opacity:1; }
+.log-edit:hover { color:var(--text2); }
 .stat-grid { display:grid; grid-template-columns:repeat(3,1fr); gap:8px; margin-bottom:8px; }
 .stat-box { border:1px solid var(--border); border-radius:6px; padding:10px 12px; }
 .stat-num { font-family:'IBM Plex Mono',monospace; font-size:20px; font-weight:500; line-height:1.2; }
@@ -291,6 +294,29 @@ body { font-family:'IBM Plex Sans Thai',sans-serif; background:var(--bg); color:
   </div>
 </div>
 
+
+<!-- LOG EDIT MODAL -->
+<div class="modal-overlay" id="log-edit-overlay" onclick="closeLogEditBg(event)">
+  <div class="modal">
+    <div class="modal-header">
+      <div class="modal-title">edit entry</div>
+      <button class="modal-close" onclick="closeLogEdit()">✕</button>
+    </div>
+    <div class="field">
+      <label>date</label>
+      <input type="date" id="le-date">
+    </div>
+    <div class="field">
+      <label>time</label>
+      <input type="time" id="le-time">
+    </div>
+    <div class="field">
+      <label>note (optional)</label>
+      <input type="text" id="le-detail" placeholder="รายละเอียด" maxlength="100">
+    </div>
+    <button class="btn-primary" onclick="saveLogEdit()">save changes</button>
+  </div>
+</div>
 <!-- NAV -->
 <nav class="nav">
   <button class="nav-item active" id="nav-home" onclick="showScreen('home')">
@@ -364,14 +390,14 @@ let S=loadState();
 let editingId=null,modalType='freq',currentPeriod='D';
 
 // ── UTILS ────────────────────────────────────────
-function today(){return new Date().toISOString().slice(0,10);}
+function today(){const d=new Date();return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');}
 function nowTime(){const d=new Date();return d.getHours().toString().padStart(2,'0')+':'+d.getMinutes().toString().padStart(2,'0');}
 function uid(){return Date.now().toString(36)+Math.random().toString(36).slice(2,6);}
 function esc(s){return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');}
 function getT(){return THEMES[S.theme]||THEMES.space;}
 function getRank(pts){const r=getT().ranks;return r.find(x=>pts>=x.min&&pts<=x.max)||r[r.length-1];}
 function getNextRank(pts){const r=getT().ranks,i=r.findIndex(x=>pts>=x.min&&pts<=x.max);return i<r.length-1?r[i+1]:null;}
-function dateKey(d){return d.toISOString().slice(0,10);}
+function dateKey(d){return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');}
 function addDays(d,n){const x=new Date(d);x.setDate(x.getDate()+n);return x;}
 function periodDays(p=currentPeriod){return{D:1,W:7,M:30,Q:90,Y:365}[p]||1;}
 function periodLabel(p=currentPeriod){return{D:'today',W:'7 days',M:'30 days',Q:'90 days',Y:'365 days'}[p]||'period';}
@@ -677,6 +703,44 @@ function toggleLogGroup(id){
   arrow.classList.toggle('open');
 }
 
+
+let editingLogIndex=null;
+
+function openLogEdit(idx){
+  editingLogIndex=idx;
+  const l=S.log[idx];if(!l)return;
+  document.getElementById('le-date').value=l.date;
+  document.getElementById('le-time').value=l.time;
+  document.getElementById('le-detail').value=l.detail||'';
+  document.getElementById('log-edit-overlay').classList.add('open');
+}
+
+function closeLogEdit(){
+  document.getElementById('log-edit-overlay').classList.remove('open');
+  editingLogIndex=null;
+}
+
+function closeLogEditBg(e){if(e.target===document.getElementById('log-edit-overlay'))closeLogEdit();}
+
+function saveLogEdit(){
+  const idx=editingLogIndex;if(idx===null||!S.log[idx])return;
+  const newDate=document.getElementById('le-date').value;
+  const newTime=document.getElementById('le-time').value;
+  const newDetail=document.getElementById('le-detail').value.trim();
+  const entry=S.log[idx];
+  const oldDate=entry.date;
+  entry.date=newDate||entry.date;
+  entry.time=newTime||entry.time;
+  entry.detail=newDetail;
+  // if date changed and was daily, update dailyDone
+  if(oldDate!==entry.date&&entry.type==='daily'){
+    if(S.dailyDone[entry.missionId]===oldDate) delete S.dailyDone[entry.missionId];
+    S.dailyDone[entry.missionId]=entry.date;
+  }
+  saveState();closeLogEdit();renderHome();
+  showToast('entry updated');
+}
+
 function renderLog(){
   const list=document.getElementById('log-list');list.innerHTML='';
   const todayStr=today();
@@ -709,6 +773,7 @@ function renderLog(){
           '<div class="log-item" id="li-'+i+'" style="transition:opacity .2s,transform .2s">'+
             '<span class="log-time">'+l.time+'</span>'+
             '<span style="flex:1;min-width:0">'+(l.detail?'<span class="log-detail">'+esc(l.detail)+'</span>':'<span style="color:var(--text3);font-size:12px;font-family:\'IBM Plex Mono\',monospace">—</span>')+'</span>'+
+            '<button class="log-edit" onclick="openLogEdit('+i+')">edit</button>'+
             '<button class="log-del" onclick="deleteLog('+i+',document.getElementById(\'li-'+i+'\'))">✕</button>'+
           '</div>'
         ).join('')+
