@@ -706,6 +706,21 @@ function toggleLogGroup(id){
 
 let editingLogIndex=null;
 
+function deleteStatsLog(logIndex, liEl){
+  liEl.classList.add('removing');
+  setTimeout(()=>{
+    const entry=S.log[logIndex];
+    if(entry){
+      const m=S.missions.find(x=>x.id===entry.missionId);
+      if(m) S.points=Math.max(0,S.points-(m.reward||0));
+      if(entry.type==='daily'&&S.dailyDone[entry.missionId]===entry.date) delete S.dailyDone[entry.missionId];
+      S.log.splice(logIndex,1);
+      saveState();
+    }
+    updateTopbar();renderStats();
+  },200);
+}
+
 function openLogEdit(idx){
   editingLogIndex=idx;
   const l=S.log[idx];if(!l)return;
@@ -737,7 +752,9 @@ function saveLogEdit(){
     if(S.dailyDone[entry.missionId]===oldDate) delete S.dailyDone[entry.missionId];
     S.dailyDone[entry.missionId]=entry.date;
   }
-  saveState();closeLogEdit();renderHome();
+  saveState();closeLogEdit();
+  if(document.getElementById('screen-stats').classList.contains('active'))renderStats();
+  else renderHome();
   showToast('entry updated');
 }
 
@@ -961,9 +978,11 @@ function renderStatsLog(periodLogs){
       '</div>'+
       '<div class="log-group-body" id="lgb-sl-'+mid+'">'+
         entriesSorted.map(({l,i})=>
-          '<div class="log-item">'+
+          '<div class="log-item" id="sli-'+i+'" style="transition:opacity .2s,transform .2s">'+
             '<span class="log-time" style="width:70px;font-size:9px">'+l.date.slice(5)+'&nbsp;'+l.time+'</span>'+
             '<span style="flex:1;min-width:0">'+(l.detail?'<span class="log-detail">'+esc(l.detail)+'</span>':'<span style="color:var(--text3);font-size:12px;font-family:\'IBM Plex Mono\',monospace">—</span>')+'</span>'+
+            '<button class="log-edit" onclick="openLogEdit('+i+')">edit</button>'+
+            '<button class="log-del" onclick="deleteStatsLog('+i+',document.getElementById(\'sli-'+i+'\'))">✕</button>'+
           '</div>'
         ).join('')+
       '</div>';
