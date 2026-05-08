@@ -904,17 +904,24 @@ function shortMonth(d){return d.toLocaleString('en-US',{month:'short'});}
 function getPeriodBuckets(){
   const now=new Date(),p=currentPeriod;
   if(p==='D')return[{start:today(),end:today(),label:'today',isToday:true}];
-  if(p==='W'||p==='M'){
-    const days=periodDays(p),step=p==='M'?5:1;
-    return Array.from({length:days},(_,i)=>{
-      const d=addDays(now,-(days-1-i)),ds=dateKey(d);
-      return{start:ds,end:ds,label:p==='M'&&i%step!==0?'':shortDay(d),isToday:i===days-1};
+  if(p==='W'){
+    return Array.from({length:7},(_,i)=>{
+      const d=addDays(now,-(6-i)),ds=dateKey(d);
+      return{start:ds,end:ds,label:shortDay(d),isToday:i===6};
+    });
+  }
+  if(p==='M'){
+    // group into 4 weeks (each ~7 days)
+    return Array.from({length:4},(_,i)=>{
+      const end=addDays(now,-((3-i)*7)),start=addDays(end,-6);
+      const sd=dateKey(start),ed=dateKey(end);
+      return{start:sd,end:ed,label:'W'+(i+1),isToday:i===3};
     });
   }
   if(p==='Q'){
     return Array.from({length:13},(_,i)=>{
       const end=addDays(now,-((12-i)*7)),start=addDays(end,-6);
-      return{start:dateKey(start),end:dateKey(end),label:i%2===0?'W'+(i+1):'',isToday:i===12};
+      return{start:dateKey(start),end:dateKey(end),label:i%3===0?'W'+(i+1):'',isToday:i===12};
     });
   }
   return Array.from({length:12},(_,i)=>{
@@ -925,8 +932,14 @@ function getPeriodBuckets(){
   });
 }
 
+// heatmap: columns must match number of cells = periodDays()
 function heatmapColumns(){
-  return{D:1,W:7,M:15,Q:18,Y:26}[currentPeriod]||7;
+  return{D:1,W:7,M:7,Q:13,Y:26}[currentPeriod]||7;
+}
+
+// heatmap days: W=7, M=28, Q=91, Y=364 — aligned to neat grids
+function heatmapDays(){
+  return{D:1,W:7,M:28,Q:91,Y:364}[currentPeriod]||7;
 }
 
 function renderStats(){
@@ -1014,14 +1027,13 @@ function buildBarChart(m,t){
 }
 
 function buildHeatmapChart(m,t){
-  const days=periodDays(),now=new Date(),cells=[];
+  const days=heatmapDays(),now=new Date(),cells=[];
   for(let i=days-1;i>=0;i--){
     const ds=dateKey(addDays(now,-i));
     cells.push({date:ds,done:S.log.some(l=>l.missionId===m.id&&l.date===ds)});
   }
   const success=cells.filter(c=>c.done).length,pct=Math.round(success/cells.length*100);
   const div=document.createElement('div');div.className='chart-box';
-  // D: show single-day summary
   if(currentPeriod==='D'){
     const done=cells[0]&&cells[0].done;
     const streak=calcStreak(m);
@@ -1032,12 +1044,11 @@ function buildHeatmapChart(m,t){
       </div>`;
     return div;
   }
-  // fixed cell size — never stretch to fill width
-  const cellSize=14,gap=2;
-  const cols=heatmapColumns();
-  const gridW=(cellSize+gap)*cols-gap;
-  div.innerHTML=`<div class="chart-title"><span>${esc(m.name)}</span><span style="color:var(--text3)">${success}/${cells.length} days · ${pct}%</span></div>
-    <div style="display:grid;grid-template-columns:repeat(${cols},${cellSize}px);gap:${gap}px;margin-top:10px;width:${gridW}px">${cells.map(c=>`<div style="width:${cellSize}px;height:${cellSize}px;border-radius:2px;background:${c.done?t.accent:'var(--bg3)'}"></div>`).join('')}</div>`;
+  const cellSize=14,gap=2,cols=heatmapColumns();
+  div.innerHTML=`<div class="chart-title"><span>${esc(m.name)}</span><span style="color:var(--text3)">${success}/${cells.length} days · ${pct}%</span></div>`+
+    `<div style="display:grid;grid-template-columns:repeat(${cols},${cellSize}px);gap:${gap}px;margin-top:10px">`+
+    cells.map(c=>`<div style="width:${cellSize}px;height:${cellSize}px;border-radius:2px;background:${c.done?t.accent:'var(--bg3)'}"></div>`).join('')+
+    `</div>`;
   return div;
 }
 
